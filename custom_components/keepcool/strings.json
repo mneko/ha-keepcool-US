@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Keep Cool — Setup",
+        "description": "Choose your weather source and the indoor temperature you want to maintain.",
+        "data": {
+          "weather_entity": "Weather entity",
+          "comfort_temp": "Comfort temperature (°C)"
+        },
+        "data_description": {
+          "weather_entity": "The weather integration that provides hourly forecasts for your location.",
+          "comfort_temp": "Windows will be opened when outdoor air is cooler than this, and closed when it rises above it."
+        }
+      },
+      "rooms_menu": {
+        "title": "Keep Cool — Rooms",
+        "description": "Add the rooms whose windows you want to track. You can add as many as you like."
+      },
+      "add_room": {
+        "title": "Keep Cool — Add room",
+        "data": {
+          "name": "Room name",
+          "facing": "Window direction",
+          "blind_entity": "Blind / cover entity (optional)",
+          "auto_control_blinds": "Automatically close blind when sun hits the window"
+        },
+        "data_description": {
+          "facing": "Which compass direction this room's main window faces.",
+          "blind_entity": "If you have a smart blind or cover for this window, select it here.",
+          "auto_control_blinds": "Keep Cool will close the blind when the sun is shining through this window and open it again when the sun moves away."
+        }
+      },
+      "finish": {
+        "title": "Keep Cool — Done!",
+        "description": "Your rooms are saved. Keep Cool will now track the schedule and control blinds automatically."
+      }
+    },
+    "error": {
+      "weather_entity_not_found": "That entity was not found. Make sure your weather integration is loaded."
+    },
+    "abort": {
+      "already_configured": "Keep Cool is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Keep Cool — Settings",
+        "data": {
+          "comfort_temp": "Comfort temperature (°C)"
+        }
+      },
+      "rooms_menu": {
+        "title": "Keep Cool — Manage rooms"
+      },
+      "add_room": {
+        "title": "Keep Cool — Add room",
+        "data": {
+          "name": "Room name",
+          "facing": "Window direction",
+          "blind_entity": "Blind / cover entity (optional)",
+          "auto_control_blinds": "Automatically close blind when sun hits the window"
+        }
+      },
+      "remove_room": {
+        "title": "Keep Cool — Remove room",
+        "data": {
+          "room": "Room to remove"
+        }
+      },
+      "finish": {
+        "title": "Keep Cool — Saved"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "recommendation": {
+        "name": "Recommendation",
+        "state": {
+          "open": "Open windows",
+          "close": "Close windows",
+          "comfortable": "Comfortable"
+        }
+      },
+      "outdoor_temp": {
+        "name": "Outdoor temperature"
+      },
+      "peak_temp": {
+        "name": "Today's peak temperature"
+      },
+      "next_event": {
+        "name": "Next event"
+      }
+    },
+    "binary_sensor": {
+      "windows_open": {
+        "name": "Windows open"
+      }
+    }
+  }
+}

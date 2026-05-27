@@ -1,0 +1,12 @@
+{
+  "domain": "keepcool",
+  "name": "Keep Cool",
+  "version": "0.1.0",
+  "documentation": "https://github.com/greghesp/ha-keepcool",
+  "issue_tracker": "https://github.com/greghesp/ha-keepcool/issues",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@greghesp"],
+  "iot_class": "calculated",
+  "homeassistant": "2024.3.0"
+}

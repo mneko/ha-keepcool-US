@@ -1,0 +1,6 @@
+{
+  "name": "Keep Cool",
+  "description": "Know when to open and close your windows to keep your home cool without AC.",
+  "render_readme": true,
+  "homeassistant": "2024.3.0"
+}
