@@ -8,5 +8,6 @@
   "dependencies": [],
   "codeowners": ["@greghesp"],
   "iot_class": "calculated",
+  "config_flow": true,
   "homeassistant": "2024.3.0"
 }
