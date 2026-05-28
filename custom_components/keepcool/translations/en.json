@@ -15,7 +15,11 @@
       },
       "rooms_menu": {
         "title": "Keep Cool — Rooms",
-        "description": "Add the rooms whose windows you want to track. You can add as many as you like."
+        "description": "Add the rooms whose windows you want to track. You can add as many as you like.",
+        "menu_options": {
+          "add_room": "Add a room",
+          "finish": "Save and finish"
+        }
       },
       "add_room": {
         "title": "Keep Cool — Add room",
@@ -52,7 +56,12 @@
         }
       },
       "rooms_menu": {
-        "title": "Keep Cool — Manage rooms"
+        "title": "Keep Cool — Manage rooms",
+        "menu_options": {
+          "add_room": "Add a room",
+          "remove_room": "Remove a room",
+          "finish": "Save and finish"
+        }
       },
       "add_room": {
         "title": "Keep Cool — Add room",
