@@ -27,12 +27,14 @@
           "name": "Room name",
           "facing": "Window direction",
           "blind_entity": "Blind / cover entity (optional)",
-          "auto_control_blinds": "Automatically close blind when sun hits the window"
+          "auto_control_blinds": "Automatically control the blind",
+          "notify_blind": "Manual blind reminder"
         },
         "data_description": {
           "facing": "Which compass direction this room's main window faces.",
           "blind_entity": "If you have a smart blind or cover for this window, select it here.",
-          "auto_control_blinds": "Keep Cool will close the blind when the sun is shining through this window and open it again when the sun moves away."
+          "auto_control_blinds": "Keep Cool will automatically close the blind when direct sunlight enters this window and reopen it once the sun has moved away. Requires a motorized blind connected to Home Assistant.",
+          "notify_blind": "Receive a notification when sunlight reaches this window and again when it clears, prompting you to close or open the blind by hand. Intended for blinds that are not motorized or connected to Home Assistant."
         }
       },
       "finish": {
@@ -69,7 +71,14 @@
           "name": "Room name",
           "facing": "Window direction",
           "blind_entity": "Blind / cover entity (optional)",
-          "auto_control_blinds": "Automatically close blind when sun hits the window"
+          "auto_control_blinds": "Automatically control the blind",
+          "notify_blind": "Manual blind reminder"
+        },
+        "data_description": {
+          "facing": "Which compass direction this room's main window faces.",
+          "blind_entity": "If you have a smart blind or cover for this window, select it here.",
+          "auto_control_blinds": "Keep Cool will automatically close the blind when direct sunlight enters this window and reopen it once the sun has moved away. Requires a motorized blind connected to Home Assistant.",
+          "notify_blind": "Receive a notification when sunlight reaches this window and again when it clears, prompting you to close or open the blind by hand. Intended for blinds that are not motorized or connected to Home Assistant."
         }
       },
       "remove_room": {
