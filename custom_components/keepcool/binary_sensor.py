@@ -1,4 +1,4 @@
-"""Binary sensor platform for Keep Cool."""
+"""Binary sensor platform for Keep Cool — unit-aware rebuild."""
 
 from __future__ import annotations
 

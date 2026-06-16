@@ -1,4 +1,9 @@
-"""Sensor platform for Keep Cool."""
+"""Sensor platform for Keep Cool — unit-aware rebuild.
+
+Temperature sensors report in the user's configured unit (°C or °F).
+HA's native unit conversion then handles dashboard display, consistent
+with how core weather sensors work.
+"""
 
 from __future__ import annotations
 
@@ -68,10 +73,9 @@ class KeepCoolRecommendationSensor(_KeepCoolSensorBase):
 
 
 class KeepCoolOutdoorTempSensor(_KeepCoolSensorBase):
-    """Current outdoor temperature from the weather entity."""
+    """Current outdoor temperature — reports in user's configured unit."""
 
     _attr_translation_key = "outdoor_temp"
-    _attr_native_unit_of_measurement = "°C"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:thermometer"
 
@@ -79,15 +83,19 @@ class KeepCoolOutdoorTempSensor(_KeepCoolSensorBase):
         super().__init__(coordinator, entry, "outdoor_temp")
 
     @property
+    def native_unit_of_measurement(self) -> str:
+        """°C or °F based on HA's unit setting."""
+        return "°C" if self.coordinator.data.is_celsius else "°F"
+
+    @property
     def native_value(self) -> float | None:
-        return self.coordinator.data.outdoor_temp
+        return self.coordinator.data.outdoor_temp_display
 
 
 class KeepCoolPeakTempSensor(_KeepCoolSensorBase):
-    """Today's forecast peak temperature."""
+    """Today's forecast peak temperature — reports in user's configured unit."""
 
     _attr_translation_key = "peak_temp"
-    _attr_native_unit_of_measurement = "°C"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:thermometer-high"
 
@@ -95,8 +103,13 @@ class KeepCoolPeakTempSensor(_KeepCoolSensorBase):
         super().__init__(coordinator, entry, "peak_temp")
 
     @property
+    def native_unit_of_measurement(self) -> str:
+        """°C or °F based on HA's unit setting."""
+        return "°C" if self.coordinator.data.is_celsius else "°F"
+
+    @property
     def native_value(self) -> float | None:
-        return self.coordinator.data.peak_temp
+        return self.coordinator.data.peak_temp_display
 
 
 class KeepCoolNextEventSensor(_KeepCoolSensorBase):
@@ -109,17 +122,29 @@ class KeepCoolNextEventSensor(_KeepCoolSensorBase):
         super().__init__(coordinator, entry, "next_event")
 
     @property
-    def native_value(self) -> str | None:
+    def native_value(self) -> str:
         evt = self.coordinator.data.next_event
         if evt is None:
-            return None
+            # Provide a meaningful state instead of "unknown"
+            if self.coordinator.data.events_today:
+                return "all_passed"
+            return "none_today"
         return evt.time.isoformat()
 
     @property
     def extra_state_attributes(self) -> dict:
         evt = self.coordinator.data.next_event
         if evt is None:
-            return {}
+            return {
+                "type": "none",
+                "title": "No events scheduled",
+                "reason": (
+                    "All today's events have passed"
+                    if self.coordinator.data.events_today
+                    else "No window events needed today"
+                ),
+                "rooms": [],
+            }
         return {
             "type": evt.type,
             "title": evt.title,

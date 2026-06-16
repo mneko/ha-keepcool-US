@@ -1,4 +1,13 @@
-"""DataUpdateCoordinator for Keep Cool."""
+"""DataUpdateCoordinator for Keep Cool — unit-aware rebuild.
+
+All internal computation (schedule, recommendations, thresholds) is done
+in **°C** and **km/h**, regardless of the user's HA display-unit setting.
+The coordinator converts incoming °F → °C and mph → km/h at the boundary
+so schedule.py never needs to know about Imperial units.
+
+Sensor entities report in the user's configured unit and let HA's native
+unit-conversion handle dashboard display.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +19,7 @@ from homeassistant.components.weather import DOMAIN as WEATHER_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     DOMAIN,
@@ -33,17 +43,24 @@ from .schedule import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Conversion constants
+_MPH_TO_KMH = 1.60934
+
 
 class KeepCoolData:
     """Holds the current computed state."""
 
     recommendation: str = "comfortable"
     recommendation_reason: str = ""
-    peak_temp: Optional[float] = None
-    outdoor_temp: Optional[float] = None
+    peak_temp_c: Optional[float] = None          # always °C (for schedule logic)
+    outdoor_temp_c: Optional[float] = None        # always °C (for schedule logic)
+    peak_temp_display: Optional[float] = None     # user's unit (for sensor state)
+    outdoor_temp_display: Optional[float] = None  # user's unit (for sensor state)
     sun_exposure: dict[str, bool] = {}
     events_today: list[ScheduleEvent] = []
+    events_tomorrow: list[ScheduleEvent] = []
     next_event: Optional[ScheduleEvent] = None
+    is_celsius: bool = True
 
 
 class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
@@ -58,7 +75,13 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         )
         self.config_entry = config_entry
         self._weather_entity: str = config_entry.data[CONF_WEATHER_ENTITY]
-        self._comfort_temp: float = config_entry.data[CONF_COMFORT_TEMP]
+
+        # Detect the user's unit system
+        self._is_celsius: bool = self._detect_celsius()
+        self._comfort_temp_c: float = self._to_celsius(
+            config_entry.data[CONF_COMFORT_TEMP]
+        )
+
         self._rooms: list[Room] = [
             Room(
                 name=r[CONF_ROOM_NAME],
@@ -70,11 +93,47 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         ]
 
     # ------------------------------------------------------------------
+    # Unit helpers
+    # ------------------------------------------------------------------
+
+    def _detect_celsius(self) -> bool:
+        """Return True if HA is configured for Celsius."""
+        unit = self.hass.config.units.temperature_unit
+        return str(unit) != "°F"
+
+    def _to_celsius(self, temp: float) -> float:
+        """Convert a temperature from the user's unit to °C."""
+        if self._is_celsius:
+            return float(temp)
+        return TemperatureConverter.convert(float(temp), "°F", "°C")
+
+    def _from_celsius(self, temp_c: float) -> float:
+        """Convert °C to the user's display unit."""
+        if self._is_celsius:
+            return temp_c
+        return TemperatureConverter.convert(temp_c, "°C", "°F")
+
+    def _is_mph(self) -> bool:
+        """Return True if wind speed from the weather entity is in mph."""
+        weather_state = self.hass.states.get(self._weather_entity)
+        if weather_state:
+            wind_unit = weather_state.attributes.get("wind_speed_unit", "")
+            return "mph" in str(wind_unit).lower()
+        # Fallback: check HA's length unit
+        return str(self.hass.config.units.length_unit) == "mi"
+
+    def _wind_to_kmh(self, speed: float) -> float:
+        """Convert wind speed to km/h if HA uses mph."""
+        if self._is_mph():
+            return float(speed) * _MPH_TO_KMH
+        return float(speed)
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _sun_azimuth(self, _at: datetime) -> Optional[float]:
-        """Current sun azimuth from sun.sun entity (ignores the time arg for now)."""
+        """Current sun azimuth from sun.sun entity."""
         sun = self.hass.states.get("sun.sun")
         if not sun:
             return None
@@ -101,7 +160,7 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         return dt_util.parse_datetime(raw) if raw else None
 
     async def _fetch_forecast(self) -> list[dict[str, Any]]:
-        """Call weather.get_forecasts (HA 2024.3+) and return hourly list."""
+        """Call weather.get_forecasts and return hourly list."""
         try:
             response = await self.hass.services.async_call(
                 WEATHER_DOMAIN,
@@ -116,7 +175,7 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
             return []
 
     async def _control_blinds(self, sun_exposure: dict[str, bool]) -> None:
-        """Open or close blind covers based on sun exposure, if auto-control is on."""
+        """Open or close blind covers based on sun exposure."""
         for room in self._rooms:
             if not room.blind_entity or not room.auto_control_blinds:
                 continue
@@ -136,13 +195,27 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
     async def _async_update_data(self) -> KeepCoolData:
         data = KeepCoolData()
 
+        # Re-detect unit system in case user changed HA settings
+        self._is_celsius = self._detect_celsius()
+        data.is_celsius = self._is_celsius
+        self._comfort_temp_c = self._to_celsius(
+            self.config_entry.data[CONF_COMFORT_TEMP]
+        )
+
         # --- Current outdoor temperature ---
         weather_state = self.hass.states.get(self._weather_entity)
         if not weather_state:
             raise UpdateFailed(f"Weather entity {self._weather_entity} not found")
 
-        outdoor_temp = weather_state.attributes.get("temperature")
-        data.outdoor_temp = outdoor_temp
+        raw_outdoor_temp = weather_state.attributes.get("temperature")
+        if raw_outdoor_temp is not None:
+            # Convert to °C for internal logic
+            data.outdoor_temp_c = self._to_celsius(float(raw_outdoor_temp))
+            # Keep display value in user's unit for sensor state
+            data.outdoor_temp_display = float(raw_outdoor_temp)
+        else:
+            data.outdoor_temp_c = None
+            data.outdoor_temp_display = None
 
         # --- Hourly forecast ---
         forecast = await self._fetch_forecast()
@@ -151,8 +224,8 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         today = now.date()
 
         hourly_times: list[datetime] = []
-        hourly_temps: list[float] = []
-        hourly_wind_speed: list[float] = []
+        hourly_temps_c: list[float] = []          # always °C
+        hourly_wind_speed_kmh: list[float] = []   # always km/h
         hourly_wind_dir: list[float] = []
 
         for entry in forecast:
@@ -164,25 +237,39 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
             if t is None:
                 continue
             hourly_times.append(t)
-            hourly_temps.append(float(temp))
-            hourly_wind_speed.append(float(entry.get("wind_speed", 0)))
-            hourly_wind_dir.append(float(entry.get("wind_bearing", 0)))
+            hourly_temps_c.append(self._to_celsius(float(temp)))
 
-        # Today's peak temp
-        today_temps = [
-            hourly_temps[i]
+            # Guard against None in wind fields (NWS returns null)
+            wind_speed = entry.get("wind_speed")
+            wind_bearing = entry.get("wind_bearing")
+            hourly_wind_speed_kmh.append(
+                self._wind_to_kmh(float(wind_speed) if wind_speed is not None else 0)
+            )
+            hourly_wind_dir.append(
+                float(wind_bearing) if wind_bearing is not None else 0
+            )
+
+        # Today's peak temp (in °C for logic, in display unit for sensor)
+        today_temps_c = [
+            hourly_temps_c[i]
             for i, t in enumerate(hourly_times)
             if t.date() == today
         ]
-        data.peak_temp = max(today_temps) if today_temps else None
+        if today_temps_c:
+            peak_c = max(today_temps_c)
+            data.peak_temp_c = peak_c
+            data.peak_temp_display = self._from_celsius(peak_c)
+        else:
+            data.peak_temp_c = None
+            data.peak_temp_display = None
 
-        # --- Current recommendation ---
-        if outdoor_temp is not None:
+        # --- Current recommendation (all in °C) ---
+        if data.outdoor_temp_c is not None:
             data.recommendation, data.recommendation_reason = (
                 compute_current_recommendation(
-                    float(outdoor_temp),
-                    self._comfort_temp,
-                    data.peak_temp,
+                    data.outdoor_temp_c,
+                    self._comfort_temp_c,
+                    data.peak_temp_c,
                 )
             )
 
@@ -197,25 +284,50 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         # --- Auto blind control ---
         await self._control_blinds(data.sun_exposure)
 
-        # --- Full schedule events ---
+        # --- Full schedule events (all temps in °C, wind in km/h) ---
         sunrise = self._sun_next_rising()
         sunset = self._sun_next_setting()
 
         data.events_today = compute_schedule_events(
             hourly_times=hourly_times,
-            hourly_temps=hourly_temps,
-            hourly_wind_speed=hourly_wind_speed,
+            hourly_temps=hourly_temps_c,
+            hourly_wind_speed=hourly_wind_speed_kmh,
             hourly_wind_dir=hourly_wind_dir,
             rooms=self._rooms,
-            comfort_temp=self._comfort_temp,
+            comfort_temp=self._comfort_temp_c,
             sun_azimuth_fn=self._sun_azimuth,
             sun_elevation_fn=self._sun_elevation,
             sunrise=sunrise,
             sunset=sunset,
         )
 
-        # Next upcoming event
-        upcoming = [e for e in data.events_today if e.time > now]
-        data.next_event = upcoming[0] if upcoming else None
+        # Also look for tomorrow's events so we never have
+        # "unknown" for next-event late in the day
+        tomorrow = (now + timedelta(days=1)).date()
+        tomorrow_times = [t for t in hourly_times if t.date() == tomorrow]
+        if tomorrow_times:
+            data.events_tomorrow = compute_schedule_events(
+                hourly_times=hourly_times,
+                hourly_temps=hourly_temps_c,
+                hourly_wind_speed=hourly_wind_speed_kmh,
+                hourly_wind_dir=hourly_wind_dir,
+                rooms=self._rooms,
+                comfort_temp=self._comfort_temp_c,
+                sun_azimuth_fn=self._sun_azimuth,
+                sun_elevation_fn=self._sun_elevation,
+                sunrise=sunrise,
+                sunset=sunset,
+            )
+        else:
+            data.events_tomorrow = []
+
+        # Next upcoming event — today first, then tomorrow
+        upcoming_today = [e for e in data.events_today if e.time > now]
+        if upcoming_today:
+            data.next_event = upcoming_today[0]
+        elif data.events_tomorrow:
+            data.next_event = data.events_tomorrow[0]
+        else:
+            data.next_event = None
 
         return data

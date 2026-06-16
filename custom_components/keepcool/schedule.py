@@ -1,7 +1,9 @@
 """
 Schedule logic — Python port of the Keep Cool web app's schedule.ts.
 
-Works from HA's weather forecast data (hourly) and the sun.sun entity.
+All temperatures are in **°C** and wind speeds in **km/h**.
+The coordinator is responsible for converting from the user's display
+units before calling any function in this module.
 """
 
 from __future__ import annotations
@@ -68,22 +70,24 @@ def compute_current_recommendation(
       "open"        — outdoor air is cooler, open up
       "close"       — outdoor is too warm, keep closed
       "comfortable" — outdoor matches comfort target, hold
+
+    All values in °C. Reason strings use °C with the degree symbol.
     """
     if outdoor_temp < comfort_temp - 1:
         gap = round(comfort_temp - outdoor_temp, 1)
         return (
             "open",
-            f"Outside is {gap}° cooler than your {round(comfort_temp)}° target — let the cool air in",
+            f"Outside is {gap}°C cooler than your {round(comfort_temp)}°C target — let the cool air in",
         )
     if outdoor_temp > comfort_temp + 1:
         gap = round(outdoor_temp - comfort_temp, 1)
-        reason = f"Outside is {gap}° above your {round(comfort_temp)}° target — keep windows closed"
+        reason = f"Outside is {gap}°C above your {round(comfort_temp)}°C target — keep windows closed"
         if forecast_peak and forecast_peak > comfort_temp:
-            reason += f" (peaks at {round(forecast_peak)}°)"
+            reason += f" (peaks at {round(forecast_peak)}°C)"
         return "close", reason
     return (
         "comfortable",
-        f"Outside temperature is near your {round(comfort_temp)}° target",
+        f"Outside temperature is near your {round(comfort_temp)}°C target",
     )
 
 
@@ -112,11 +116,8 @@ def compute_schedule_events(
     sunset: Optional[datetime],
 ) -> list[ScheduleEvent]:
     """
-    Compute today's full event schedule, mirroring the web app's logic:
-      - Open event when outdoor temp first drops below comfort temp
-      - Close event when outdoor temp is forecast to exceed comfort temp
-      - Blind events when sun hits a room's window during hot period
-      - Cross-ventilation info event
+    Compute today's full event schedule, mirroring the web app's logic.
+    All temperatures must be in °C, wind speeds in km/h.
     """
     events: list[ScheduleEvent] = []
     now = datetime.now().astimezone()
@@ -146,7 +147,7 @@ def compute_schedule_events(
         time=close_time,
         type="close",
         title="Close windows & doors",
-        reason=f"Temperature reaching {round(comfort_temp)}° — shut out the heat before it builds up",
+        reason=f"Temperature reaching {round(comfort_temp)}°C — shut out the heat before it builds up",
     ))
 
     # --- Open events: morning (after sunrise) and evening (after peak) ---
@@ -169,7 +170,7 @@ def compute_schedule_events(
             time=eve_time,
             type="open",
             title="Re-open windows",
-            reason=f"Outside has cooled to {round(day_temps[eve_candidates[0]])}° — safe to ventilate again",
+            reason=f"Outside has cooled to {round(day_temps[eve_candidates[0]])}°C — safe to ventilate again",
         ))
 
     # --- Blind events: per room, when sun hits during the hot period ---
@@ -196,7 +197,7 @@ def compute_schedule_events(
                 rooms=[room.name],
             ))
 
-    # --- Cross-ventilation info ---
+    # --- Cross-ventilation info (wind speed in km/h) ---
     morning_wind_speeds = [
         hourly_wind_speed[day_indices[i]]
         for i in range(min(len(day_temps), 6))  # first 6 hours

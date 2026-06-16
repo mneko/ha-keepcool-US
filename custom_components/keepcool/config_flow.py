@@ -1,4 +1,9 @@
-"""Config flow for Keep Cool."""
+"""Config flow for Keep Cool — unit-aware rebuild.
+
+The comfort temperature slider adapts its range and unit label based on
+the user's HA temperature setting. The value is always stored in the
+user's display unit and converted to °C at runtime by the coordinator.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from homeassistant.components.weather import DOMAIN as WEATHER_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_COMFORT_TEMP,
@@ -20,10 +26,41 @@ from .const import (
     CONF_ROOM_NAME,
     CONF_ROOMS,
     CONF_WEATHER_ENTITY,
-    DEFAULT_COMFORT_TEMP,
+    DEFAULT_COMFORT_TEMP_C,
     DOMAIN,
     FACING_OPTIONS,
+    COMFORT_TEMP_RANGES,
 )
+
+
+def _is_celsius(hass) -> bool:
+    """Check if HA is configured for Celsius."""
+    return str(hass.config.units.temperature_unit) != "°F"
+
+
+def _default_comfort_temp(hass) -> float:
+    """Return the default comfort temp in the user's unit."""
+    if _is_celsius(hass):
+        return DEFAULT_COMFORT_TEMP_C
+    return round(TemperatureConverter.convert(DEFAULT_COMFORT_TEMP_C, "°C", "°F"), 1)
+
+
+def _comfort_temp_schema(hass, default: float | None = None) -> selector.NumberSelector:
+    """Build a comfort-temp selector that matches the user's unit system."""
+    is_c = _is_celsius(hass)
+    unit = "°C" if is_c else "°F"
+    ranges = COMFORT_TEMP_RANGES[unit]
+    if default is None:
+        default = _default_comfort_temp(hass)
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=ranges["min"],
+            max=ranges["max"],
+            step=ranges["step"],
+            unit_of_measurement=unit,
+            mode=selector.NumberSelectorMode.SLIDER,
+        )
+    )
 
 
 class KeepCoolConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -59,16 +96,9 @@ class KeepCoolConfigFlow(ConfigFlow, domain=DOMAIN):
                     selector.EntitySelectorConfig(domain=WEATHER_DOMAIN)
                 ),
                 vol.Required(
-                    CONF_COMFORT_TEMP, default=DEFAULT_COMFORT_TEMP
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10,
-                        max=35,
-                        step=0.5,
-                        unit_of_measurement="°C",
-                        mode=selector.NumberSelectorMode.SLIDER,
-                    )
-                ),
+                    CONF_COMFORT_TEMP,
+                    default=_default_comfort_temp(self.hass),
+                ): _comfort_temp_schema(self.hass),
             }
         )
 
@@ -164,7 +194,7 @@ class KeepCoolOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
         self._comfort_temp: float = config_entry.data.get(
-            CONF_COMFORT_TEMP, DEFAULT_COMFORT_TEMP
+            CONF_COMFORT_TEMP, DEFAULT_COMFORT_TEMP_C
         )
         self._rooms: list[dict[str, Any]] = list(
             config_entry.data.get(CONF_ROOMS, [])
@@ -181,16 +211,19 @@ class KeepCoolOptionsFlow(OptionsFlow):
             self._comfort_temp = user_input[CONF_COMFORT_TEMP]
             return await self.async_step_rooms_menu()
 
+        # If the stored value looks like °C but HA is now °F (user switched
+        # units after initial setup), convert the default to °F so the
+        # slider displays correctly.
+        display_default = self._comfort_temp
+        if not _is_celsius(self.hass) and self._comfort_temp <= 35:
+            display_default = round(
+                TemperatureConverter.convert(self._comfort_temp, "°C", "°F"), 1
+            )
+
         schema = vol.Schema(
             {
-                vol.Required(CONF_COMFORT_TEMP, default=self._comfort_temp): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=10,
-                        max=35,
-                        step=0.5,
-                        unit_of_measurement="°C",
-                        mode=selector.NumberSelectorMode.SLIDER,
-                    )
+                vol.Required(CONF_COMFORT_TEMP, default=display_default): _comfort_temp_schema(
+                    self.hass, display_default
                 ),
             }
         )
