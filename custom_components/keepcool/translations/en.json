@@ -6,11 +6,11 @@
         "description": "Choose your weather source and the indoor temperature you want to maintain.",
         "data": {
           "weather_entity": "Weather entity",
-          "comfort_temp": "Comfort temperature (°C)"
+          "comfort_temp": "Comfort temperature"
         },
         "data_description": {
           "weather_entity": "The weather integration that provides hourly forecasts for your location.",
-          "comfort_temp": "Windows will be opened when outdoor air is cooler than this, and closed when it rises above it."
+          "comfort_temp": "Windows will be opened when outdoor air is cooler than this, and closed when it rises above it. Enter the value in your Home Assistant temperature unit (°C or °F)."
         }
       },
       "rooms_menu": {
@@ -52,7 +52,7 @@
       "init": {
         "title": "Keep Cool — Settings",
         "data": {
-          "comfort_temp": "Comfort temperature (°C)"
+          "comfort_temp": "Comfort temperature"
         }
       },
       "rooms_menu": {
