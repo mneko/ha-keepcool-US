@@ -24,6 +24,7 @@ from .const import (
     CONF_ROOM_BLIND_ENTITY,
     CONF_ROOM_FACING,
     CONF_ROOM_NAME,
+    CONF_ROOM_NOTIFY_BLIND,
     CONF_ROOMS,
     CONF_WEATHER_ENTITY,
     DEFAULT_COMFORT_TEMP_C,
@@ -60,6 +61,26 @@ def _comfort_temp_schema(hass, default: float | None = None) -> selector.NumberS
             unit_of_measurement=unit,
             mode=selector.NumberSelectorMode.SLIDER,
         )
+    )
+
+
+def _room_schema(hass: HomeAssistant) -> vol.Schema:
+    """Shared schema for adding a room (config + options flow)."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_ROOM_NAME): selector.TextSelector(),
+            vol.Required(CONF_ROOM_FACING): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=FACING_OPTIONS,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+            vol.Optional(CONF_ROOM_BLIND_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=COVER_DOMAIN)
+            ),
+            vol.Optional(CONF_ROOM_AUTO_CONTROL, default=False): selector.BooleanSelector(),
+            vol.Optional(CONF_ROOM_NOTIFY_BLIND, default=False): selector.BooleanSelector(),
+        }
     )
 
 
@@ -142,27 +163,16 @@ class KeepCoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 room[CONF_ROOM_AUTO_CONTROL] = user_input.get(
                     CONF_ROOM_AUTO_CONTROL, False
                 )
+                room[CONF_ROOM_NOTIFY_BLIND] = user_input.get(
+                    CONF_ROOM_NOTIFY_BLIND, False
+                )
             self._rooms.append(room)
             return await self.async_step_rooms_menu()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_ROOM_NAME): selector.TextSelector(),
-                vol.Required(CONF_ROOM_FACING): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=FACING_OPTIONS,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Optional(CONF_ROOM_BLIND_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=COVER_DOMAIN)
-                ),
-                vol.Optional(CONF_ROOM_AUTO_CONTROL, default=False): selector.BooleanSelector(),
-            }
-        )
-
         return self.async_show_form(
-            step_id="add_room", data_schema=schema, errors=errors
+            step_id="add_room",
+            data_schema=_room_schema(self.hass),
+            errors=errors,
         )
 
     # ------------------------------------------------------------------
@@ -264,26 +274,16 @@ class KeepCoolOptionsFlow(OptionsFlow):
                 room[CONF_ROOM_AUTO_CONTROL] = user_input.get(
                     CONF_ROOM_AUTO_CONTROL, False
                 )
+                room[CONF_ROOM_NOTIFY_BLIND] = user_input.get(
+                    CONF_ROOM_NOTIFY_BLIND, False
+                )
             self._rooms.append(room)
             return await self.async_step_rooms_menu()
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_ROOM_NAME): selector.TextSelector(),
-                vol.Required(CONF_ROOM_FACING): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=FACING_OPTIONS,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Optional(CONF_ROOM_BLIND_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=COVER_DOMAIN)
-                ),
-                vol.Optional(CONF_ROOM_AUTO_CONTROL, default=False): selector.BooleanSelector(),
-            }
+        return self.async_show_form(
+            step_id="add_room",
+            data_schema=_room_schema(self.hass),
         )
-
-        return self.async_show_form(step_id="add_room", data_schema=schema)
 
     # ------------------------------------------------------------------
     # Step 3b — Remove a room

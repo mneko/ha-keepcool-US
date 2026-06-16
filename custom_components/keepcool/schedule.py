@@ -27,6 +27,7 @@ class Room:
     facing: str
     blind_entity: Optional[str] = None
     auto_control_blinds: bool = False
+    notify_blind: bool = False          # ← NEW
 
 
 @dataclass
@@ -174,6 +175,7 @@ def compute_schedule_events(
         ))
 
     # --- Blind events: per room, when sun hits during the hot period ---
+    #     Distinguish between auto-controlled and notification-only blinds
     hot_hours = {
         hourly_times[day_indices[i]]
         for i in range(close_hour_idx, len(day_temps))
@@ -181,6 +183,9 @@ def compute_schedule_events(
     }
 
     for room in rooms:
+        if not room.blind_entity:
+            continue
+
         blind_times = []
         for t in sorted(hot_hours):
             az = sun_azimuth_fn(t)
@@ -189,11 +194,22 @@ def compute_schedule_events(
                 blind_times.append(t)
 
         if blind_times:
+            if room.auto_control_blinds:
+                event_type = "blind"
+                title = f"Auto-close {room.name} blind"
+                reason = f"Sun will be hitting your {room.facing}-facing window — blind closes automatically"
+            elif room.notify_blind:
+                event_type = "blind_notify"
+                title = f"Close {room.name} blind"
+                reason = f"Sun will be hitting your {room.facing}-facing window — close the blind to keep the room cool"
+            else:
+                continue  # no blind action configured
+
             events.append(ScheduleEvent(
                 time=blind_times[0],
-                type="blind",
-                title=f"Close {room.name} blind",
-                reason=f"Sun will be hitting your {room.facing}-facing window",
+                type=event_type,
+                title=title,
+                reason=reason,
                 rooms=[room.name],
             ))
 

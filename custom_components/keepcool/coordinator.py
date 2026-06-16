@@ -31,6 +31,8 @@ from .const import (
     CONF_ROOM_FACING,
     CONF_ROOM_BLIND_ENTITY,
     CONF_ROOM_AUTO_CONTROL,
+    CONF_ROOM_NOTIFY_BLIND,
+    NOTIFICATION_ID,
 )
 from .schedule import (
     Room,
@@ -88,9 +90,13 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
                 facing=r[CONF_ROOM_FACING],
                 blind_entity=r.get(CONF_ROOM_BLIND_ENTITY),
                 auto_control_blinds=r.get(CONF_ROOM_AUTO_CONTROL, False),
+                notify_blind=r.get(CONF_ROOM_NOTIFY_BLIND, False),
             )
             for r in config_entry.data.get(CONF_ROOMS, [])
         ]
+
+        # Track previous sun exposure to detect changes
+        self._prev_sun_exposure: dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Unit helpers
@@ -175,18 +181,71 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
             return []
 
     async def _control_blinds(self, sun_exposure: dict[str, bool]) -> None:
-        """Open or close blind covers based on sun exposure."""
+        """Control blinds: auto-close for rooms with auto_control, send
+        notification for rooms with notify_blind only."""
         for room in self._rooms:
-            if not room.blind_entity or not room.auto_control_blinds:
+            if not room.blind_entity:
                 continue
             exposed = sun_exposure.get(room.name, False)
-            service = "close_cover" if exposed else "open_cover"
-            await self.hass.services.async_call(
-                "cover",
-                service,
-                {"entity_id": room.blind_entity},
-                blocking=False,
+            was_exposed = self._prev_sun_exposure.get(room.name, False)
+
+            if room.auto_control_blinds:
+                # Automatic control — close when sun hits, open when it leaves
+                service = "close_cover" if exposed else "open_cover"
+                await self.hass.services.async_call(
+                    "cover",
+                    service,
+                    {"entity_id": room.blind_entity},
+                    blocking=False,
+                )
+            elif room.notify_blind:
+                # Manual blind — notify on state transitions only
+                if exposed and not was_exposed:
+                    # Sun just started hitting this window
+                    await self._send_blind_notification(room, "close")
+                elif not exposed and was_exposed:
+                    # Sun just left this window
+                    await self._send_blind_notification(room, "open")
+
+    async def _send_blind_notification(self, room: Room, action: str) -> None:
+        """Send a persistent notification for a manual blind action."""
+        if action == "close":
+            title = f"☀️ Close {room.name} blind"
+            message = (
+                f"The sun is now hitting your {room.facing}-facing window "
+                f"in {room.name}. Close the blind to keep the room cool."
             )
+        else:
+            title = f"🌤️ Open {room.name} blind"
+            message = (
+                f"The sun has moved away from your {room.facing}-facing window "
+                f"in {room.name}. You can open the blind again."
+            )
+
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": title,
+                "message": message,
+                "notification_id": f"{NOTIFICATION_ID}_{room.name.lower().replace(' ', '_')}_{action}",
+            },
+            blocking=False,
+        )
+
+    async def _clear_blind_notifications(self) -> None:
+        """Dismiss all Keep Cool blind notifications on startup/reload."""
+        for room in self._rooms:
+            if room.notify_blind and room.blind_entity:
+                for action in ("close", "open"):
+                    await self.hass.services.async_call(
+                        "persistent_notification",
+                        "dismiss",
+                        {
+                            "notification_id": f"{NOTIFICATION_ID}_{room.name.lower().replace(' ', '_')}_{action}",
+                        },
+                        blocking=False,
+                    )
 
     # ------------------------------------------------------------------
     # Main update
@@ -281,8 +340,10 @@ class KeepCoolCoordinator(DataUpdateCoordinator[KeepCoolData]):
         else:
             data.sun_exposure = {room.name: False for room in self._rooms}
 
-        # --- Auto blind control ---
+        # --- Auto blind control + manual blind notifications ---
         await self._control_blinds(data.sun_exposure)
+        # Save for next update's transition detection
+        self._prev_sun_exposure = dict(data.sun_exposure)
 
         # --- Full schedule events (all temps in °C, wind in km/h) ---
         sunrise = self._sun_next_rising()

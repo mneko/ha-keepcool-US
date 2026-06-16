@@ -11,9 +11,10 @@ CONF_ROOM_NAME = "name"
 CONF_ROOM_FACING = "facing"
 CONF_ROOM_BLIND_ENTITY = "blind_entity"
 CONF_ROOM_AUTO_CONTROL = "auto_control_blinds"
+CONF_ROOM_NOTIFY_BLIND = "notify_blind"          # ← NEW
 
-# Defaults
-DEFAULT_COMFORT_TEMP = 22
+# Defaults (in Celsius — converted at runtime if HA uses °F)
+DEFAULT_COMFORT_TEMP_C = 22
 UPDATE_INTERVAL_MINUTES = 15
 
 # Window directions and their compass azimuths
@@ -29,6 +30,17 @@ SUN_FACING_TOLERANCE = 67.5
 # Sun must be at least this high above horizon to count as direct sun
 SUN_ELEVATION_MIN = 10.0
 
-# Cross-ventilation
+# Cross-ventilation (always in metric — coordinator converts before calling)
 CROSS_VENT_WIND_MIN_KMH = 8.0
 CROSS_VENT_ROOM_TOLERANCE = 67.5
+
+# ── Unit-aware thresholds ──────────────────────────────────────────
+# Config flow slider ranges keyed by the user's temperature unit.
+
+COMFORT_TEMP_RANGES = {
+    "°C": {"min": 10, "max": 35, "step": 0.5},
+    "°F": {"min": 50, "max": 95, "step": 1.0},
+}
+
+# ── Notification ───────────────────────────────────────────────────
+NOTIFICATION_ID = "keepcool_blind_reminder"
